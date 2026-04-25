@@ -149,6 +149,12 @@ canvas#game {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
+  // Preload character sprite. The image is centered + scaled to the player hitbox.
+  const mikoImg = new Image();
+  let mikoLoaded = false;
+  mikoImg.onload = () => { mikoLoaded = true; };
+  mikoImg.src = 'assets/miko.png';
+
   // ---------- Audio ----------
   const Sound = (() => {
     let ac = null, muted = localStorage.getItem('miko_muted') === '1';
@@ -277,19 +283,19 @@ canvas#game {
     if (p.vx > 0) p.facing = 1;
     if (p.vx < 0) p.facing = -1;
 
-    // Jump
+    // Jump (much higher than before)
     if (state.keys.jump && p.onGround) {
-      p.vy = -10.4;
+      p.vy = -13.5;
       p.onGround = false;
       state.keys.jumpHeld = true;
       Sound.jump();
     }
-    // Jump cut (variable height)
-    if (!state.keys.jump && p.vy < -3) p.vy = -3;
+    // Jump cut (variable height) — only cut while still rising fast
+    if (!state.keys.jumpHeld && p.vy < -5) p.vy = -5;
     state.keys.jump = false; // edge-trigger reset
 
-    // Gravity
-    p.vy = Math.min(p.vy + 0.55, 13);
+    // Gravity (slightly weaker so jumps feel floaty)
+    p.vy = Math.min(p.vy + 0.5, 14);
 
     // Move X
     p.x += p.vx;
@@ -574,65 +580,38 @@ canvas#game {
   function drawMiko(cx, gy) {
     // gy is the foot baseline (player.y is foot)
     const w = state.player.w, h = state.player.h;
-    const x = cx - w / 2, y = gy - h;
+    // Sprite is rendered slightly larger than the hitbox so the art looks right.
+    const drawW = 38, drawH = 44;
+    const x = cx - drawW / 2;
+    const y = gy - drawH;
     const flip = state.player.facing < 0;
+
+    // Walking bob / jump tilt
+    const t = performance.now();
+    const moving = Math.abs(state.player.vx) > 0.5 && state.player.onGround;
+    const bob = moving ? Math.sin(t / 80) * 1.5 : 0;
+
     ctx.save();
     if (flip) {
       ctx.translate(cx, 0);
       ctx.scale(-1, 1);
       ctx.translate(-cx, 0);
     }
-    // walking bob
-    const t = performance.now();
-    const moving = Math.abs(state.player.vx) > 0.5 && state.player.onGround;
-    const bob = moving ? Math.sin(t / 70) * 1.2 : 0;
-    // hair (long brown)
-    ctx.fillStyle = '#5a2e1a';
-    ctx.fillRect(x - 3, y, w + 6, 14);
-    ctx.fillRect(x - 3, y + 4, 4, 22);
-    ctx.fillRect(x + w - 1, y + 4, 4, 22);
-    // face
-    ctx.fillStyle = '#ffd6c0';
-    ctx.fillRect(x + 2, y + 4, w - 4, 12);
-    // bow (red)
-    ctx.fillStyle = '#e8133a';
-    ctx.fillRect(x + 6, y - 4, 10, 6);
-    ctx.fillStyle = '#ff5577';
-    ctx.fillRect(x + 8, y - 3, 6, 4);
-    // eyes
-    ctx.fillStyle = '#000';
-    ctx.fillRect(x + 6, y + 9, 2, 3);
-    ctx.fillRect(x + w - 8, y + 9, 2, 3);
-    // mouth
-    ctx.fillRect(x + 10, y + 14, 3, 1);
-    // body (red dress)
-    ctx.fillStyle = '#e8133a';
-    ctx.fillRect(x, y + 14 + bob, w, 10);
-    // chest white (haku-e)
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(x + 4, y + 14 + bob, w - 8, 5);
-    // skirt
-    ctx.fillStyle = '#e8133a';
-    ctx.beginPath();
-    ctx.moveTo(x - 2, y + 22);
-    ctx.lineTo(x + w + 2, y + 22);
-    ctx.lineTo(x + w, y + h);
-    ctx.lineTo(x, y + h);
-    ctx.closePath();
-    ctx.fill();
-    // legs
-    ctx.fillStyle = '#ffd6c0';
-    const legSwing = moving ? Math.sin(t / 70) * 2 : 0;
-    ctx.fillRect(x + 4, y + h, 4, -2);
-    ctx.fillRect(x + w - 8, y + h, 4, -2);
+    if (mikoLoaded) {
+      ctx.drawImage(mikoImg, x, y + bob, drawW, drawH);
+    } else {
+      // Fallback: red rectangle until image loads
+      ctx.fillStyle = '#e8133a';
+      ctx.fillRect(cx - w / 2, gy - h, w, h);
+    }
     ctx.restore();
-    // dead overlay
+
     if (state.player.dead) {
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(x - 4, y - 6, w + 8, h + 12);
+      ctx.fillRect(cx - drawW / 2 - 4, gy - drawH - 6, drawW + 8, drawH + 12);
       ctx.fillStyle = '#fff';
       ctx.font = 'bold 8px "Press Start 2P", monospace';
-      ctx.fillText('DEAD', x - 2, y + h / 2);
+      ctx.fillText('DEAD', cx - drawW / 2, gy - drawH / 2);
     }
   }
 
@@ -651,8 +630,13 @@ canvas#game {
   function pressLeft(v)  { state.keys.left  = v; if (v) Sound.prime(); }
   function pressRight(v) { state.keys.right = v; if (v) Sound.prime(); }
   function pressJump(v)  {
-    if (v) { state.keys.jump = true; Sound.prime(); }
-    else { state.keys.jumpHeld = false; }
+    if (v) {
+      state.keys.jump = true;
+      state.keys.jumpHeld = true;
+      Sound.prime();
+    } else {
+      state.keys.jumpHeld = false;
+    }
   }
   window.addEventListener('keydown', (e) => {
     const k = e.key;
