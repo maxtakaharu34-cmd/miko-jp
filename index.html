@@ -149,11 +149,37 @@ canvas#game {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
-  // Preload character sprite. The image is centered + scaled to the player hitbox.
-  const mikoImg = new Image();
+  // Preload character sprite. We re-draw it into an offscreen canvas and
+  // turn any near-white pixels transparent so even an opaque source PNG
+  // shows up cleanly.
+  const mikoSprite = document.createElement('canvas');
   let mikoLoaded = false;
-  mikoImg.onload = () => { mikoLoaded = true; };
-  mikoImg.src = 'assets/miko.png?v=2';
+  {
+    const src = new Image();
+    src.crossOrigin = 'anonymous';
+    src.onload = () => {
+      mikoSprite.width = src.naturalWidth;
+      mikoSprite.height = src.naturalHeight;
+      const c = mikoSprite.getContext('2d');
+      c.drawImage(src, 0, 0);
+      try {
+        const id = c.getImageData(0, 0, mikoSprite.width, mikoSprite.height);
+        const d = id.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          // Knock out near-white pixels (background)
+          if (r > 240 && g > 240 && b > 240) {
+            d[i + 3] = 0;
+          }
+        }
+        c.putImageData(id, 0, 0);
+      } catch (err) {
+        // If reading pixels fails (CORS), just use the image as-is
+      }
+      mikoLoaded = true;
+    };
+    src.src = 'assets/miko.png?v=3';
+  }
 
   // ---------- Audio ----------
   const Sound = (() => {
@@ -598,7 +624,7 @@ canvas#game {
       ctx.translate(-cx, 0);
     }
     if (mikoLoaded) {
-      ctx.drawImage(mikoImg, x, y + bob, drawW, drawH);
+      ctx.drawImage(mikoSprite, x, y + bob, drawW, drawH);
     } else {
       // Fallback: red rectangle until image loads
       ctx.fillStyle = '#e8133a';
